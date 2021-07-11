@@ -24,8 +24,6 @@ tf.app.flags.DEFINE_string("inference_path", "", "Set filename of inference, def
 
 FLAGS = tf.app.flags.FLAGS
 
-lendata = 513
-
 def load_data(path, fname):    
     post = []
     with open('%s/%s.post' % (path, fname)) as f:
@@ -72,24 +70,19 @@ def build_vocab(path, data):
  
     relation_vocab_list = []
     relation_file = open(path + "/relations.txt", "r")
-
     for line in relation_file:
         relation_vocab_list += line.strip().split()
-
-    print(relation_vocab_list)
-
+   
     vocab = {}
     for i, pair in enumerate(data):
-        if i % 10000 == 0:
+        if i % 100000 == 0:
             print("    processing line %d" % i)
         for token in [word for p in pair['post'] for word in p]+pair['response']:
             if token in vocab:
                 vocab[token] += 1
             else:
                 vocab[token] = 1
-
     vocab_list = _START_VOCAB + relation_vocab_list + sorted(vocab, key=vocab.get, reverse=True)
-    #print(vocab_list)
 
     if len(vocab_list) > FLAGS.symbols:
         vocab_list = vocab_list[:FLAGS.symbols]
@@ -117,7 +110,6 @@ def build_vocab(path, data):
 
 def gen_batched_data(data):
     encoder_len = [max([len(item['post'][i]) for item in data]) + 1 for i in range(4)]
-
     decoder_len = max([len(item['response']) for item in data]) + 1    
     posts_1, posts_2, posts_3, posts_4, posts_length_1, posts_length_2, posts_length_3, posts_length_4, responses, responses_length = [], [], [], [], [], [], [], [], [], []
 
@@ -145,8 +137,7 @@ def gen_batched_data(data):
             for word in item['post'][i]:
                 try:
                     w = lemma(word).encode("ascii")
-                #except UnicodeDecodeError, e:
-                except UnicodeDecodeError:
+                except UnicodeDecodeError, e:
                     w = word
                 if w in relation:
                     entity[i][-1].append(relation[w])
@@ -202,14 +193,12 @@ def gen_batched_data(data):
                     'posts_length_4': posts_length_4, 
                     'responses': np.array(responses),
                     'responses_length': responses_length}
-#    exit()
     return batched_data
 
 def train(model, sess, dataset):
     st, ed, loss = 0, 0, []
     while ed < len(dataset):
-    #while ed < lendata:
-        print("epoch %d, training %.4f %%...\r" % (epoch, float(ed) / len(dataset) * 100))
+        print ("epoch %d, training %.4f %%...\r" % (epoch, float(ed) / len(dataset) * 100))
         st, ed = ed, ed + FLAGS.batch_size if ed + FLAGS.batch_size < len(dataset) else len(dataset)
         batch_data = gen_batched_data(dataset[st:ed])
         outputs = model.step_decoder(sess, batch_data)
@@ -221,8 +210,7 @@ def train(model, sess, dataset):
 def evaluate(model, sess, dataset):
     st, ed, loss = 0, 0, []
     while ed < len(dataset):
-    #while ed < lendata:
-        print("epoch %d, evaluate %.4f %%...\r" % (epoch, float(ed) / len(dataset) * 100))
+        print ("epoch %d, evaluate %.4f %%...\r" % (epoch, float(ed) / len(dataset) * 100))
         st, ed = ed, ed + FLAGS.batch_size if ed + FLAGS.batch_size < len(dataset) else len(dataset)
         batch_data = gen_batched_data(dataset[st:ed])
         outputs = model.step_decoder(sess, batch_data, forward_only=True)
@@ -232,8 +220,6 @@ def evaluate(model, sess, dataset):
 def inference(model, sess, dataset):
     st, ed, posts, truth, generations, alignments_2, alignments_3, alignments_4, alignments = 0, 0, [], [], [], [], [], [], []
     while ed < len(dataset):
-    #while ed < lendata:
-        print("epoch %d, evaluate %.4f %%...\r" % (epoch, float(ed) / len(dataset) * 100))
         st, ed = ed, ed + FLAGS.batch_size if ed + FLAGS.batch_size < len(dataset) else len(dataset)
         data = gen_batched_data(dataset[st:ed])
         outputs = sess.run(['generation:0', model.alignments_2, model.alignments_3, model.alignments_4, model.alignments],
@@ -267,15 +253,12 @@ def inference(model, sess, dataset):
     for batch_generation in generations:
         for response in batch_generation:
             result = []
-
             for token in response:
                 if token != '_EOS':
                     result.append(token)
-                    print("passou3 ===================>>>>>>")
                 else:
                     break
             print >> output_file, ' '.join(result)
-
     return 
 
 config = tf.ConfigProto()
@@ -283,9 +266,6 @@ config.gpu_options.allow_growth = True
 with tf.Session(config=config) as sess:
     if FLAGS.is_train:
         data_train = load_data(FLAGS.data_dir, 'train')
-        print("Load data...")
-        print(data_train[0])
-
         data_dev = load_data(FLAGS.data_dir, 'val')
         data_test = load_data(FLAGS.data_dir, 'test')
         vocab, embed, vocab_dict = build_vocab(FLAGS.data_dir, data_train)
@@ -312,22 +292,23 @@ with tf.Session(config=config) as sess:
             tf.global_variables_initializer().run()
             model.symbol2index.init.run()
         pre_losses = [1e18] * 3
-        #while True:
-        while model.epoch.eval() < 5:
+        while True:
             epoch = model.epoch.eval()
             random.shuffle(data_train)
             start_time = time.time()
             loss = train(model, sess, data_train)
-            model.saver.save(sess, '%s/checkpoint' % FLAGS.train_dir, global_step=model.global_step)
+            model.saver.save(sess, '%s/checkpoint' %
+                             FLAGS.train_dir, global_step=model.global_step)
             if loss > max(pre_losses):
                 sess.run(model.learning_rate_decay_op)
             pre_losses = pre_losses[1:] + [loss]
-            print("epoch %d learning rate %.4f epoch-time %.4f perplexity [%.8f]" % (epoch, model.learning_rate.eval(), time.time() - start_time, np.exp(loss)))
+            print "epoch %d learning rate %.4f epoch-time %.4f perplexity [%.8f]" \
+                  % (epoch, model.learning_rate.eval(), time.time() - start_time, np.exp(loss))
 
             loss = evaluate(model, sess, data_dev)
-            print("        val_set, perplexity [%.8f]" % np.exp(loss))
+            print "        val_set, perplexity [%.8f]" % np.exp(loss)
             loss = evaluate(model, sess, data_test)
-            print("        test_set, perplexity [%.8f]" % np.exp(loss))
+            print "        test_set, perplexity [%.8f]" % np.exp(loss)
 
     else:
         model = IEMSAModel(
@@ -344,8 +325,9 @@ with tf.Session(config=config) as sess:
         if FLAGS.inference_version == 0:
             model_path = tf.train.latest_checkpoint(FLAGS.train_dir)
         else:
-            model_path = '%s/checkpoint-%08d' % (FLAGS.train_dir, FLAGS.inference_version)
-        print('restore from %s' % model_path)
+            model_path = '%s/checkpoint-%08d' % (
+                FLAGS.train_dir, FLAGS.inference_version)
+        print 'restore from %s' % model_path
         model.saver.restore(sess, model_path)
         model.symbol2index.init.run()
 
